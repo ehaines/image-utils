@@ -17,7 +17,8 @@ def alpha_composite_directory_images(dir_path: pathlib.Path):
                 if pathlib.Path.exists(original_path):
                     # clip the image with the original
                     image: Image = apply_file_image_mask(pathlib.Path(entry.path), original_path)
-                    save_path = pathlib.Path.joinpath(dir_path, original_image_name + "-glazed-processed.png")
+                    image = image.reduce(4)
+                    save_path = pathlib.Path.joinpath(dir_path, original_image_name + "-processed.png")
                     image.save(save_path)
 
 
