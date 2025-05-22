@@ -1,0 +1,1 @@
+test_image=r"C:\GitHub\sketchies-src-art\promotional\paper-test\test_paper_effect.png"
