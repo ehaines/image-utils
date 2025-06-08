@@ -2,11 +2,24 @@ import pathlib, config
 from PIL import Image
 from image_utils import *
 
-path = pathlib.Path(config.test_image)
-# image: Image = Image.open(path, formats=["PNG", "JPEG"])
-# image = image.reduce(4)
-# solid_image = make_solid_overlay_mask(image, (255, 255, 255))
-output = add_smooth_stroke(80, path, alias_size=10)
-# output = dilate_image(path)
-output.show()
+images = [config.test_image,
+          config.test_image2,
+          config.test_image3,
+          config.test_image4,
+          config.test_image5,
+          config.test_image6]
+
+
+def stroke_test():
+    for image_path in images:
+        path = pathlib.Path(image_path)
+        output = add_smooth_stroke(100, path, alias_size=10)
+        output.show()
+
+
+def tear_edges_test():
+    tear_paper_edge(images[0], 15)
+
+if __name__ == "__main__":
+    tear_edges_test()
 
