@@ -55,22 +55,25 @@ def add_stroke():
     pass
 
 
-def add_smooth_stroke(stroke_size, image_path: pathlib.Path | str):
+def add_smooth_stroke(stroke_size, image_path: pathlib.Path | str, alias_size=10):
     process_start = time.time()
     print (process_start)
-    stroke_radius = stroke_size or 5
+    stroke_radius = stroke_size or 25
     img = Image.open(image_path)  # RGBA image
     stroke_image = Image.new("RGBA", img.size, (255, 255, 255, 1))
-    img_alpha = img.getchannel(3).point(lambda x: 255 if x > 200 else 0)
+    img_alpha = (img.getchannel(3).point(lambda x: 255 if x > 200 else 0))
+    # img_alpha.filter(ImageFilter.FIND_EDGES).load()
     # img_alpha = img.getchannel(3)
     alpha_time = time.time()
     alpha_diff = alpha_time - process_start
     print("time to get alpha: " + str(alpha_diff))
     start = time.time()
-    # stroke_alpha = img_alpha.filter(ImageFilter.MaxFilter(stroke_radius))
-    # stroke_alpha = dilate_image(img_alpha)
-    stroke_alpha = circle_stroke(img_alpha, stroke_size)
-    # optionally, smooth the result
+    stroke_alpha = circle_stroke(img_alpha, stroke_radius)
+    # stroke_alpha.show()
+    stroke_alpha.paste(circle_stroke(stroke_alpha, alias_size))
+    stroke_alpha.paste(circle_stroke(stroke_alpha, alias_size//2))
+    stroke_alpha.paste(circle_stroke(stroke_alpha, alias_size //5))
+    # stroke_alpha.show()
     stroke_diff = time.time() - start
     print(fr"max filter stroke time for size {stroke_size}: {str(stroke_diff)}")
     start = time.time()
@@ -146,9 +149,9 @@ def circle_stroke(image: pathlib.Path | Image.Image, size: int, color: str = 'wh
     img: Image
     # Open the image and convert to grayscale
     if isinstance(image, pathlib.Path) or isinstance(image, str):
-        img = Image.open(image)
+        img = Image.open(image).convert("L")
     elif isinstance(image, Image.Image):
-        img = image
+        img = image.convert("L")
     else:
         raise TypeError("image is not correct type (Path or Image)")
     X, Y = img.size
@@ -161,5 +164,5 @@ def circle_stroke(image: pathlib.Path | Image.Image, size: int, color: str = 'wh
             if edge[x, y] > 0:
                 draw.ellipse((x - size, y - size, x + size, y + size), fill=color)
 
-    #stroke.paste(img, (0, 0), img)
+    stroke.paste(img, (0, 0), img)
     return stroke
