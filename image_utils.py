@@ -2,8 +2,8 @@ import pathlib
 import time
 from random import random, seed, uniform, randint
 
-from PIL import Image, ImageFilter, ImagePath
-from PIL.ImageDraw import Draw, ImageDraw
+from PIL import Image, ImageFilter, ImagePath, ImageDraw
+from PIL.Image import composite
 
 import probability_utils
 
@@ -48,12 +48,31 @@ def generate_random_noise(noise_level=1):
     return noise
 
 
-def red_noise(noise_range):
-    for i in range(noise_range):
-        seed(i)
-        # noise = [uniform(-1, +1) for i in range(mapsize)]
-        # print_chart(i, smoother(noise))
-        pass
+def generate_red_noise(length, amplitude=1.0, correlation=0.7):
+    """Generate red noise (temporally correlated) for path points.
+    
+    Args:
+        length: Number of noise values to generate
+        amplitude: Maximum amplitude of noise
+        correlation: Correlation factor (0.0 = white noise, 1.0 = fully correlated)
+    
+    Returns:
+        List of correlated noise values
+    """
+    if length <= 0:
+        return []
+
+    noise = [uniform(-amplitude, amplitude)]  # First point is random
+
+    for i in range(1, length):
+        # Each subsequent point is influenced by the previous point
+        previous_noise = noise[i - 1]
+        new_random = uniform(-amplitude, amplitude)
+        # Blend previous noise with new random value based on correlation
+        correlated_noise = correlation * previous_noise + (1 - correlation) * new_random
+        noise.append(correlated_noise)
+
+    return noise
 
 
 def add_stroke():
@@ -100,16 +119,46 @@ def add_smooth_stroke(stroke_size, image_src: pathlib.Path | str | Image.Image, 
     return output
 
 
+def trace_contour(edge_coords_set, start_point):
+    """Trace a connected contour starting from start_point"""
+    contour = [start_point]
+    current = start_point
+    edge_coords_set.remove(start_point)
+
+    while True:
+        # Find next connected neighbor (8-connectivity)
+        next_point = None
+        for dx in [-1, 0, 1]:
+            for dy in [-1, 0, 1]:
+                if dx == 0 and dy == 0:
+                    continue
+                neighbor = (current[0] + dx, current[1] + dy)
+                if neighbor in edge_coords_set:
+                    next_point = neighbor
+                    break
+            if next_point:
+                break
+
+        if next_point is None:
+            break  # End of contour
+
+        contour.append(next_point)
+        edge_coords_set.remove(next_point)
+        current = next_point
+
+    return contour
+
+
 def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: str = 'pink'):
+    from PIL import ImageDraw
     img: Image
-    # Open the image and convert to grayscale
     if isinstance(image, pathlib.Path) or isinstance(image, str):
         img = Image.open(image).convert("RGBA")
     elif isinstance(image, Image.Image):
         img = image.convert("RGBA")
     else:
         raise TypeError("image is not correct type (Path or Image)")
-    stroke = add_smooth_stroke(60, img, 15)  # todo just get stroke buffer piece out
+    stroke = add_smooth_stroke(40, img, 15)  # todo just get stroke buffer piece out
     # stroke.show()
     paper = stroke.copy()
     paper_mask = paper.getchannel(3).point(lambda x: 255 if x > 250 else 0)
@@ -119,69 +168,122 @@ def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: str = '
     # edge.show()
     edge_mask = edge.point(lambda x: 255 if x > 240 else 0)
     edge_mask.show()
-    edge_pixels = edge_mask.getdata()
-    edge_path = ImagePath.Path(edge_pixels)
-    print(f"edge path type: {str(type(edge_path))}")
-    edge_path.compact()
-    cx, cy = probability_utils.find_centroid(image)
-    draw_centroid_point(image=img, centroid=(cx, cy), size=10)
-    edge_path.map(torn_paper_effect_by_path)
+    # Extract edge pixels and organize them into connected contour segments
+    width, height = edge_mask.size
+    edge_pixels = list(edge_mask.getdata())
 
-    # Create a new image
-    new_image = Image.new('RGB', (400, 400), (128, 128, 128))
-    draw = Draw(new_image)
-    draw.line(edge_path)
-    new_image.show()
+    # Get all edge pixel coordinates
+    all_edge_coords = []
+    for i, pixel_val in enumerate(edge_pixels):
+        if pixel_val == 255:  # White edge pixels
+            x = i % width
+            y = i // width
+            all_edge_coords.append((x, y))
+
+    print(f"DEBUG: Found {len(all_edge_coords)} total edge pixels")
+
+    # Find all connected contour segments
+    edge_coords_set = set(all_edge_coords)
+    contour_segments = []
+
+    while edge_coords_set:
+        start_point = next(iter(edge_coords_set))
+        contour = trace_contour(edge_coords_set, start_point)
+        if len(contour) > 10:  # Only keep significant contours
+            contour_segments.append(contour)
+
+    print(f"DEBUG: Found {len(contour_segments)} contour segments")
+    for i, segment in enumerate(contour_segments):
+        print(f"DEBUG: Segment {i}: {len(segment)} points")
+
+    # Use the largest contour segment (likely the main outline)
+    if contour_segments:
+        edge_coordinates = max(contour_segments, key=len)
+        print(f"DEBUG: Using largest contour with {len(edge_coordinates)} points")
+    else:
+        edge_coordinates = []
+        print("DEBUG: No contour segments found!")
+
+    if not edge_coordinates:
+        print("DEBUG: No edge coordinates found!")
+        return
+
+    cx, cy = probability_utils.find_centroid(stroke)
+    # draw_centroid_point(image=stroke, centroid=(cx, cy), size=10)
+
+    # Apply red noise to create torn paper effect
+    modified_points = apply_torn_paper_effect(edge_coordinates, noise_amplitude=20, correlation=0.6)
+
+    # Create a new image to show the result
+    new_image = Image.new('RGBA', (width, height), (128, 128, 128, 0))
+    draw = ImageDraw.Draw(new_image)
+
+    # Create ImagePath from the ordered contour points and draw
+    if len(modified_points) > 1:
+        # Create ImagePath.Path from the modified contour points
+        torn_edge_path = ImagePath.Path(modified_points)
+
+        # Draw the path (as a polygon to make sure it's closed)
+        draw.polygon(torn_edge_path, fill='white', width=8)
+
+    # ImageDraw.floodfill(new_image, (cx,cy), (255,255,255))
+    # new_image.show()
+    
+    # Flood fill from centroid to create filled torn paper effect
+    filled_image = new_image.copy().convert("RGBA")
+    ImageDraw.floodfill(filled_image, (int(cx), int(cy)), (255,255,255), thresh=100)
+    filled_image.show()
+    filled_image.filter(ImageFilter.GaussianBlur(9))
+    filled_image.show()
+    final_image = Image.alpha_composite(filled_image, img)
+    final_image.show()
+
+
+    
     # options:
     #  try with LUT and point(): https://pillow.readthedocs.io/en/stable/reference/Image.html#PIL.Image.Image.point
     #  or try varying path by function
 
 
-def torn_paper_effect_by_path():
-    #may need to find the centroid, the angle to the centroid, then vary point on that line
+def apply_torn_paper_effect(path_points, noise_amplitude=10, correlation=0.7):
+    """Apply red noise to path points for torn paper effect.
+    
+    Args:
+        path_points: List of (x, y) coordinate tuples
+        noise_amplitude: Maximum amplitude of noise displacement
+        correlation: Correlation factor for red noise (0.0 = white noise, 1.0 = fully correlated)
+    
+    Returns:
+        List of modified (x, y) coordinate tuples
+    """
+    if not path_points:
+        return []
 
-    #optionally, compress the path for greater speed
+    num_points = len(path_points)
+    print(f"DEBUG: Applying torn paper effect to {num_points} points")
 
-    def smoother(noise):
-        output = []
-        for i in range(len(noise) - 1):
-            output.append(0.5 * (noise[i] + noise[i + 1]))
-        return output
+    # Generate red noise for x and y directions separately
+    noise_x = generate_red_noise(num_points, noise_amplitude, correlation)
+    noise_y = generate_red_noise(num_points, noise_amplitude, correlation)
 
-    # Function to apply random offsets to the points
-    def apply_random_offsets(points, max_offset=10):
-        noise = [(x + random.randint(-max_offset, max_offset), y + random.randint(-max_offset, max_offset)) for x, y in
-                points]
-        return smoother(noise)
+    # Apply noise to each point
+    modified_points = []
+    for i, (x, y) in enumerate(path_points):
+        new_x = x + noise_x[i]
+        new_y = y + noise_y[i]
+        modified_points.append((new_x, new_y))
 
-    # Apply random offsets to the points
-    random.seed(time.time())
+        if i < 5:  # Debug first few points
+            print(f"DEBUG: Point {i}: ({x}, {y}) -> ({new_x}, {new_y}) (offset: {noise_x[i]:.2f}, {noise_y[i]:.2f})")
 
-    modified_points = apply_random_offsets(path.tolist(True))
+    return modified_points
 
-    # Create a Path object with the modified points
-    path = ImagePath.Path(modified_points)
-
-    # noise = [uniform(-1, +1) for i in range(len(path))]
-    # smooth_red = smoother(noise)
-    # path_points = path.tolist(True)
-    # assert len(smooth_red) == len(path_points)
-
-    # line_pts = []
-    # for i in range(len(path)):
-    #     ptx, pty = path_points[i]
-    #     ptx = smooth_red[i] + ptx
-    #     pty = smooth_red[i] + pty
-    #     line_pts[i] = []
-    #     line_pts[i][0] = ptx
-    #     line_pts[i][1] = pty
-    # path = ImagePath.Path(line_pts)
 
 def random_ift(amplitude, frequencies):
-        random.seed(i)
-        amplitudes = [amplitude(f) for f in frequencies]
-        noises = [noise(f) for f in frequencies]
-        sum_of_noises = weighted_sum(amplitudes, noises)
+    """Placeholder for inverse Fourier transform noise generation"""
+    # TODO: Implement if needed for advanced noise generation
+    pass
+
 
 def draw_centroid_point(image: Image, centroid: tuple[int, int], size: int, color="red"):
     """For debugging: draws and displays
@@ -189,47 +291,17 @@ def draw_centroid_point(image: Image, centroid: tuple[int, int], size: int, colo
      as a circle overlay on the image with radius [size] in [color(default = red)].
      Color may be in any form recognized by PIL"""
     img = image.copy()
-    centroid_img = Image.new(img.mode, img.size, (0,0,0,0))
+    centroid_img = Image.new("RGBA", img.size, (0, 0, 0, 0))
     x, y = centroid
-    draw = Draw(centroid_img)
+    draw = ImageDraw.Draw(centroid_img)
     draw.ellipse((x - size, y - size, x + size, y + size), fill=color)
-    img.paste(centroid_img, (0, 0)) #pastes the point on top of the original image
+    # Use alpha_composite to properly blend the centroid with the stroke image
+    img = Image.alpha_composite(img.convert("RGBA"), centroid_img)
     img.show()
+
 
 def torn_paper_by_point():
     pass
-
-def dilate_image(image: pathlib.Path | Image.Image):
-    from PIL import Image
-    import numpy as np
-    from scipy.ndimage import binary_dilation
-
-    img: Image
-    # Open the image and convert to grayscale
-    if isinstance(image, pathlib.Path) or isinstance(image, str):
-        img = Image.open(image).convert('L')
-    elif isinstance(image, Image.Image):
-        img = image
-    else:
-        raise TypeError("image wrong type")
-    # Convert the image to a binary array (thresholding)
-    threshold = 128
-    binary_img = np.array(img) > threshold
-
-    # Define a 3x3 structuring element for dilation
-    structure = np.ones((125, 125), dtype=bool)
-
-    # Apply the dilation operation
-    dilated_img = binary_dilation(binary_img, structure=structure)
-
-    # Convert the result back to an image
-    dilated_img_pil = Image.fromarray(dilated_img.astype(np.uint8) * 255)
-    return dilated_img_pil
-    # Save the result
-    # dilated_img_pil.save("dilated_image.jpg")
-
-    # Display the result
-    # dilated_img_pil.show()
 
 
 # def mystroke(filename: pathlib.Path, size: int, color: str = 'white'):
@@ -262,7 +334,7 @@ def circle_stroke_buffer(image: pathlib.Path | Image.Image, size: int, color: st
     edge = img.filter(ImageFilter.FIND_EDGES).load()
     # stroke = Image.new(img.mode, img.size, (0, 0, 0, 0))
     stroke = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    draw = Draw(stroke)
+    draw = ImageDraw.Draw(stroke)
     for x in range(X):
         for y in range(Y):
             if edge[x, y] > 0:
@@ -288,3 +360,4 @@ def add_area_noise(image: Image.Image | pathlib.Path):
             (randint(0, 255), randint(0, 255), randint(0, 255))
         )
     return im
+
