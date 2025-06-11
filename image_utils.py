@@ -149,7 +149,7 @@ def trace_contour(edge_coords_set, start_point):
     return contour
 
 
-def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: str = 'pink'):
+def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: tuple):
     from PIL import ImageDraw
     img: Image
     if isinstance(image, pathlib.Path) or isinstance(image, str):
@@ -158,16 +158,16 @@ def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: str = '
         img = image.convert("RGBA")
     else:
         raise TypeError("image is not correct type (Path or Image)")
-    stroke = add_smooth_stroke(40, img, 15)  # todo just get stroke buffer piece out
+    stroke = add_smooth_stroke(15, img, 15)  # todo just get stroke buffer piece out
     # stroke.show()
     paper = stroke.copy()
     paper_mask = paper.getchannel(3).point(lambda x: 255 if x > 250 else 0)
-    paper_mask.show()
+    # paper_mask.show()
     X, Y = paper.size
     edge = paper_mask.convert("L").filter(ImageFilter.FIND_EDGES)
     # edge.show()
     edge_mask = edge.point(lambda x: 255 if x > 240 else 0)
-    edge_mask.show()
+    # edge_mask.show()
     # Extract edge pixels and organize them into connected contour segments
     width, height = edge_mask.size
     edge_pixels = list(edge_mask.getdata())
@@ -224,20 +224,23 @@ def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: str = '
         torn_edge_path = ImagePath.Path(modified_points)
 
         # Draw the path (as a polygon to make sure it's closed)
-        draw.polygon(torn_edge_path, fill='white', width=8)
+        draw.polygon(torn_edge_path, fill=color, width=8)
 
     # ImageDraw.floodfill(new_image, (cx,cy), (255,255,255))
     # new_image.show()
     
     # Flood fill from centroid to create filled torn paper effect
     filled_image = new_image.copy().convert("RGBA")
-    ImageDraw.floodfill(filled_image, (int(cx), int(cy)), (255,255,255), thresh=100)
-    filled_image.show()
+    noisy_fill = add_area_noise(filled_image)
+    noisy_fill = Image.composite(noisy_fill, filled_image, filled_image)
+    # noisy_fill.show()
+    ImageDraw.floodfill(filled_image, (int(cx), int(cy)), color, thresh=100)
+    # filled_image.show()
     filled_image.filter(ImageFilter.GaussianBlur(9))
-    filled_image.show()
-    final_image = Image.alpha_composite(filled_image, img)
-    final_image.show()
-
+    # filled_image.show()
+    final_image = Image.alpha_composite(noisy_fill, img)
+    # final_image.show()
+    return final_image
 
     
     # options:

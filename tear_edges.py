@@ -18,7 +18,11 @@ def stroke_test():
 
 
 def tear_edges_test():
-    tear_paper_edge(images[0], 15)
+    for image_path in images:
+        path = pathlib.Path(image_path)
+        # output = tear_paper_edge(image_path, 15, color=(255, 174, 196))
+        output = tear_paper_edge(image_path, 15, color=(255, 245, 250))
+        output.show()
 
 if __name__ == "__main__":
     tear_edges_test()
