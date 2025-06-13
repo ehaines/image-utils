@@ -3,7 +3,6 @@ import time
 from random import random, seed, uniform, randint
 
 from PIL import Image, ImageFilter, ImagePath, ImageDraw
-from PIL.Image import composite
 
 import probability_utils
 

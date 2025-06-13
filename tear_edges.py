@@ -1,5 +1,4 @@
 import pathlib, config
-from PIL import Image
 from image_utils import *
 
 images = [config.test_image,
