@@ -1,12 +1,7 @@
-import pathlib, config
+import pathlib, config, os, argparse
 from image_utils import *
 
-images = [config.test_image,
-          config.test_image2,
-          config.test_image3,
-          config.test_image4,
-          config.test_image5,
-          config.test_image6]
+images = [config.test_image]
 
 
 def stroke_test():
@@ -23,6 +18,23 @@ def tear_edges_test():
         output = tear_paper_edge(image_path, 15, color=(255, 245, 250))
         output.show()
 
+def tear_edges(dir_path, name_change):
+    with os.scandir(dir_path) as directory:
+        for entry in directory:
+            original_image_name = pathlib.Path(entry.name).stem
+            original_suffix = pathlib.Path(entry).suffix
+            if entry.is_file() and original_suffix.endswith(".png"):
+                output = tear_paper_edge(pathlib.Path(entry), 15, color=(255, 245, 250))
+                print(type(dir_path))
+                save_path = pathlib.Path.joinpath(pathlib.Path(dir_path), "papered", original_image_name + f"-{name_change}.png")
+                output.save(save_path)
+
+
 if __name__ == "__main__":
-    tear_edges_test()
+    parser = argparse.ArgumentParser(description=".")
+    parser.add_argument("directory", help="path to directory of images to process")
+    parser.add_argument("--namechange", default="torn", help="string addition to filename for final torn paper image")
+
+    args = parser.parse_args()
+    tear_edges(args.directory, args.namechange)
 
