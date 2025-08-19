@@ -15,7 +15,7 @@ def tear_edges_test():
     for image_path in images:
         path = pathlib.Path(image_path)
         # output = tear_paper_edge(image_path, 15, color=(255, 174, 196))
-        output = tear_paper_edge(image_path, 15, color=(255, 245, 250))
+        output = tear_paper_edge(image_path, 2, color=(255, 245, 250))
         output.show()
 
 def tear_edges(dir_path, name_change):
@@ -26,12 +26,12 @@ def tear_edges(dir_path, name_change):
             if entry.is_file() and original_suffix.endswith(".png"):
                 output = tear_paper_edge(pathlib.Path(entry), 15, color=(255, 245, 250))
                 print(type(dir_path))
-                save_path = pathlib.Path.joinpath(pathlib.Path(dir_path), "papered", original_image_name + f"-{name_change}.png")
+                save_path = pathlib.Path.joinpath(pathlib.Path(dir_path), "torn-papered", original_image_name + f"-{name_change}.png")
                 output.save(save_path)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=".")
+    parser = argparse.ArgumentParser(description="Adds a torn constreuction paper effect around the edges of the image.")
     parser.add_argument("directory", help="path to directory of images to process")
     parser.add_argument("--namechange", default="torn", help="string addition to filename for final torn paper image")
 

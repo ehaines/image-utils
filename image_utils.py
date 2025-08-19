@@ -157,7 +157,7 @@ def tear_paper_edge(image: pathlib.Path | Image.Image, size: int, color: tuple):
         img = image.convert("RGBA")
     else:
         raise TypeError("image is not correct type (Path or Image)")
-    stroke = add_smooth_stroke(15, img, 15)  # todo just get stroke buffer piece out
+    stroke = add_smooth_stroke(size, img, 1)  # todo just get stroke buffer piece out
     # stroke.show()
     paper = stroke.copy()
     paper_mask = paper.getchannel(3).point(lambda x: 255 if x > 250 else 0)
